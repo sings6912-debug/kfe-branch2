@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Menu - Self Ordering</title>
+    <link href="https://fonts.googleapis.com/css2?family=Battambang:wght@400;700&family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <!-- បណ្ណាល័យ Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        :root {
+            --primary: #10b981;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --danger: #e11d48;
+            --success: #10b981;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Battambang', 'Nunito', sans-serif; }
+        body { background: var(--bg-dark); color: var(--text-main); padding-bottom: 90px; }
+        
+        .header {
+            background: var(--bg-card); padding: 15px 20px; text-align: center;
+            border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
+        }
+        .header img { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; margin-bottom: 5px; }
+        .header h1 { font-size: 18px; color: var(--primary); }
+        .header p { font-size: 12px; color: var(--text-muted); }
+
+        .container { max-width: 600px; margin: 0 auto; padding: 15px; }
+        
+        .product-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .product-card {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+            overflow: hidden; display: flex; flex-direction: column; cursor: pointer; transition: 0.2s;
+        }
+        .product-card:active { transform: scale(0.97); }
+        .product-img { width: 100%; aspect-ratio: 1; background: #000; object-fit: cover; }
+        .product-info { padding: 10px; display: flex; flex-direction: column; flex-grow: 1; justify-content: space-between; }
+        .p-name { font-size: 14px; font-weight: bold; margin-bottom: 5px; line-height: 1.3; }
+        .p-price { color: var(--success); font-weight: bold; font-size: 14px; }
+
+        /* Bottom Cart Bar */
+        .cart-bar {
+            position: fixed; bottom: 0; left: 0; width: 100%; background: var(--bg-card);
+            border-top: 1px solid var(--border); padding: 15px 20px; display: flex;
+            justify-content: space-between; align-items: center; box-shadow: 0 -5px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+        }
+        .btn-order { background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 15px; cursor: pointer; }
+
+        /* Modal Cart / Checkout */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: flex-end; z-index: 2000; }
+        .modal { background: var(--bg-card); width: 100%; max-width: 600px; border-radius: 20px 20px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; }
+        .form-control { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-dark); color: var(--text-main); margin-bottom: 15px; font-size: 14px; outline: none; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <img id="shopLogo" src="" style="display: none;" alt="Logo">
+        <h1 id="shopName">កំពុងផ្ទុកម៉ឺនុយ...</h1>
+        <p id="branchTitle">សាខា៖ ...</p>
+    </div>
+
+    <div class="container">
+        <div id="menuProductGrid" class="product-grid">
+            <!-- รายการสินค้าจะถูกโหลดมาแสดงที่นี่ -->
+        </div>
+    </div>
+
+    <div class="cart-bar" id="cartBar" style="display: none;">
+        <div>
+            <div style="font-size: 12px; color: var(--text-muted);">ទំនិញក្នុងកន្ត្រក: <span id="cartCount" style="font-weight: bold; color: #fff;">0</span> មុខ</div>
+            <div style="font-size: 16px; font-weight: bold; color: var(--success);" id="cartTotal">$0.00</div>
+        </div>
+        <button class="btn-order" onclick="openCheckoutModal()">មើលកន្ត្រក & កុម្មង់ ➔</button>
+    </div>
+
+    <!-- Modal ពិនិត្យកន្ត្រក និងបញ្ជូន Order -->
+    <div class="modal-overlay" id="checkoutModal">
+        <div class="modal">
+            <h3 style="margin-bottom: 15px;">🛒 កន្ត្រកទំនិញរបស់អ្នក</h3>
+            <div id="cartItemsList" style="margin-bottom: 15px; max-height: 200px; overflow-y: auto;"></div>
+            
+            <div style="border-top: 1px dashed var(--border); padding-top: 15px; margin-bottom: 15px;">
+                <label style="font-size: 13px; display: block; margin-bottom: 5px;">ឈ្មោះរបស់អ្នក *</label>
+                <input type="text" id="custName" class="form-control" placeholder="វាយឈ្មោះរបស់អ្នក...">
+                
+                <label style="font-size: 13px; display: block; margin-bottom: 5px;">លេខទូរស័ព្ទ (ជាជម្រើស)</label>
+                <input type="text" id="custPhone" class="form-control" placeholder="ឧ. 012 345 678">
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <button class="form-control" style="background: transparent; color: var(--text-main); margin-bottom: 0;" onclick="closeCheckoutModal()">បោះបង់</button>
+                <button class="btn-order" style="flex: 1;" onclick="submitCustomerOrder()">✅ បញ្ជាក់ការកុម្មង់</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://uynmpjykedjjjyxczsja.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV5bm1wanlrZWRqamp5eGN6c2phIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MDc1NjIsImV4cCI6MjEwMjE4MzU2Mn0.vw8UpBoEWvbQwl2J5alfTB0nvv7EizB8EpwEsp4ugCg';
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const SHOP_BRANCH_ID = urlParams.get('branch') || 'branch_1';
+        document.getElementById('branchTitle').innerText = `សាខា៖ ${SHOP_BRANCH_ID}`;
+
+        let inventory = [];
+        let cart = [];
+
+        async function loadMenuData() {
+            try {
+                let { data, error } = await supabaseClient
+                    .from('branch_store')
+                    .select('data_json')
+                    .eq('branch_id', SHOP_BRANCH_ID)
+                    .single();
+
+                if (data && data.data_json) {
+                    let d = data.data_json;
+                    inventory = (d.inventory || []).filter(p => p && parseFloat(p.qty) > 0); // យកតែទំនិញមានស្តុក
+                    document.getElementById('shopName').innerText = d.shopName || 'SKM INTEGRATE';
+                    if (d.shopLogo) {
+                        const logo = document.getElementById('shopLogo');
+                        logo.src = d.shopLogo;
+                        logo.style.display = 'block';
+                    }
+                } else {
+                    document.getElementById('shopName').innerText = 'រកមិនឃើញទិន្នន័យហាងទេ';
+                }
+            } catch (e) {
+                document.getElementById('shopName').innerText = 'មានបញ្ហាក្នុងការតភ្ជាប់';
+            }
+            renderMenuProducts();
+        }
+
+        function renderMenuProducts() {
+            const grid = document.getElementById('menuProductGrid');
+            if (inventory.length === 0) {
+                grid.innerHTML = '<div style="grid-column: span 2; text-align: center; color: var(--text-muted); padding: 30px;">គ្មានទំនិញក្នុងស្តុកទេ</div>';
+                return;
+            }
+
+            grid.innerHTML = inventory.map(p => `
+                <div class="product-card" onclick="addToCart('${p.id}')">
+                    <img src="${p.image || 'https://placehold.co/200?text=No+Img'}" class="product-img" alt="Product">
+                    <div class="product-info">
+                        <div class="p-name">${p.name}</div>
+                        <div class="p-price">$${parseFloat(p.price || 0).toFixed(2)}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function addToCart(id) {
+            const product = inventory.find(p => p.id === id);
+            if (!product) return;
+            const existing = cart.find(c => c.id === id);
+            if (existing) {
+                if (existing.cartQty < product.qty) existing.cartQty++;
+                else alert('ស្តុកមានកំណត់!');
+            } else {
+                cart.push({ ...product, cartQty: 1 });
+            }
+            updateCartBar();
+        }
+
+        function updateCartBar() {
+            const cartBar = document.getElementById('cartBar');
+            const totalCount = cart.reduce((sum, item) => sum + item.cartQty, 0);
+            const totalPrice = cart.reduce((sum, item) => sum + (parseFloat(item.price || 0) * item.cartQty), 0);
+
+            if (totalCount > 0) {
+                cartBar.style.display = 'flex';
+                document.getElementById('cartCount').innerText = totalCount;
+                document.getElementById('cartTotal').innerText = `$${totalPrice.toFixed(2)}`;
+            } else {
+                cartBar.style.display = 'none';
+            }
+        }
+
+        function openCheckoutModal() {
+            const listEl = document.getElementById('cartItemsList');
+            listEl.innerHTML = cart.map(c => `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 13px;">
+                    <div>${c.name} (x${c.cartQty})</div>
+                    <div style="font-weight: bold; color: var(--success);">$${(c.price * c.cartQty).toFixed(2)}</div>
+                </div>
+            `).join('');
+            document.getElementById('checkoutModal').style.display = 'flex';
+        }
+
+        function closeCheckoutModal() {
+            document.getElementById('checkoutModal').style.display = 'none';
+        }
+
+        async function submitCustomerOrder() {
+            const name = document.getElementById('custName').value.trim();
+            const phone = document.getElementById('custPhone').value.trim();
+            if (!name) {
+                alert('សូមបញ្ចូលឈ្មោះរបស់អ្នកសិន!');
+                return;
+            }
+
+            const totalAmount = cart.reduce((sum, item) => sum + (parseFloat(item.price || 0) * item.cartQty), 0);
+            const newInvId = 'ORD-' + Date.now().toString().slice(-6);
+
+            let newOrder = {
+                id: newInvId,
+                timestamp: Date.now(),
+                date: new Date().toLocaleString('km-KH'),
+                customer: name,
+                phone: phone,
+                items: [...cart],
+                rate: 4000,
+                totalAmount: totalAmount,
+                totalRiel: totalAmount * 4000,
+                status: 'unpaid', // ចូលទៅ POS ជាស្ថានភាពរង់ចាំទូទាត់
+                seller: 'Customer (Scan QR)'
+            };
+
+            try {
+                // ទាញយកទិន្នន័យចុងក្រោយពី Supabase មក Update បន្ថែម
+                let { data, error } = await supabaseClient
+                    .from('branch_store')
+                    .select('data_json')
+                    .eq('branch_id', SHOP_BRANCH_ID)
+                    .single();
+
+                if (data && data.data_json) {
+                    let d = data.data_json;
+                    if (!d.invoices) d.invoices = [];
+                    d.invoices.unshift(newOrder); // ដាក់ចូលក្នុងបញ្ជីវិក្កយបត្រ
+
+                    // កាត់ស្តុកក្នុង inventory ស្រាប់
+                    cart.forEach(c => {
+                        let invItem = (d.inventory || []).find(i => i.id === c.id);
+                        if (invItem) invItem.qty = Math.max(0, invItem.qty - c.cartQty);
+                    });
+
+                    // บันทึกกลับเข้า Supabase
+                    await supabaseClient
+                        .from('branch_store')
+                        .update({ data_json: d, updated_at: new Date() })
+                        .eq('branch_id', SHOP_BRANCH_ID);
+
+                    alert('🎉 ការកុម្មង់របស់អ្នកបានជោគជ័យ! សូមរង់ចាំបុគ្គលិករៀបចំទំនិញជូន។');
+                    cart = [];
+                    closeCheckoutModal();
+                    updateCartBar();
+                    loadMenuData();
+                }
+            } catch (err) {
+                alert('មានបញ្ហាក្នុងការបញ្ជូនទំនិញ សូមព្យាយាមម្តងទៀត!');
+            }
+        }
+
+        window.onload = loadMenuData;
+    </script>
+</body>
+</html>
